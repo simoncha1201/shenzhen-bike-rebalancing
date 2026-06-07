@@ -8,6 +8,7 @@ from bike_rebalancing.data_pipeline import (
     build_scenario_grid_demand,
     clean_orders,
     normalize_orders,
+    write_distance_matrix_parquet,
 )
 
 
@@ -98,6 +99,26 @@ def test_od_flow_and_distance_matrix_are_model_ready() -> None:
     assert (distances["distance_km"] > 0).all()
 
 
+def test_chunked_distance_writer_matches_in_memory_matrix(tmp_path) -> None:
+    clean, _ = clean_orders(
+        pd.DataFrame(
+            [
+                _order("u1", "2021-05-10 07:05:00", "2021-05-10 07:15:00", 114.000, 22.500, 114.020, 22.520),
+                _order("u2", "2021-05-10 07:10:00", "2021-05-10 07:20:00", 114.010, 22.510, 114.030, 22.530),
+            ]
+        )
+    )
+    _, grid_meta = build_scenario_grid_demand(clean, 1000)
+    expected = build_distance_matrix(grid_meta).sort_values(["from_grid_id", "to_grid_id"]).reset_index(drop=True)
+
+    path = tmp_path / "distance.parquet"
+    rows_written = write_distance_matrix_parquet(grid_meta, path, chunk_origins=1)
+    actual = pd.read_parquet(path).sort_values(["from_grid_id", "to_grid_id"]).reset_index(drop=True)
+
+    assert rows_written == len(expected)
+    pd.testing.assert_frame_equal(actual, expected, check_exact=False, rtol=1e-12)
+
+
 def _order(user_id: str, start_time: str, end_time: str, start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict:
     return {
         "USER_ID": user_id,
@@ -109,4 +130,3 @@ def _order(user_id: str, start_time: str, end_time: str, start_lng: float, start
         "END_LNG": end_lng,
         "END_LAT": end_lat,
     }
-

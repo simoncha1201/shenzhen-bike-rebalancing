@@ -44,25 +44,33 @@
 | 清洗后福田相关订单 | 69,357 |
 | 早晚高峰场景 | 10 |
 | 1km 网格需求表行数 | 1,150 |
+| 500m 网格需求表行数 | 3,810 |
+| 200m 网格需求表行数 | 19,140 |
+| 100m 网格需求表行数 | 61,060 |
 | 1km OD 流行数 | 8,660 |
+| 500m OD 流行数 | 22,806 |
+| 200m OD 流行数 | 39,848 |
+| 100m OD 流行数 | 46,370 |
 
 场景覆盖范围：
 
 - 日期：`2021-05-10` 至 `2021-05-14`
 - 区域：福田区近似边界框
 - 高峰：早高峰 `07:00-10:00`，晚高峰 `17:00-20:00`
-- 网格：主模型使用 `1km`，敏感性分析保留 `500m`
+- 网格：已生成 `1km`、`500m`、`200m`、`100m`，其中 `200m` 和 `100m` 可用于更细粒度建模
 
 ## 给模型负责人的使用方式
 
-模型负责人 pull 仓库后，优先使用下面两个文件：
+模型负责人 pull 仓库后，可优先使用 200m 或 100m 输入：
 
 ```text
-data/processed/scenario_grid_demand_1km.parquet
-data/processed/distance_matrix_1km.parquet
+data/processed/scenario_grid_demand_200m.parquet
+data/processed/distance_matrix_200m.parquet
+data/processed/scenario_grid_demand_100m.parquet
+data/processed/distance_matrix_100m.parquet
 ```
 
-`scenario_grid_demand_1km.parquet` 中的关键字段：
+`scenario_grid_demand_*` 中的关键字段：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -78,7 +86,7 @@ data/processed/distance_matrix_1km.parquet
 
 - 富余区域集合：`surplus > 0`
 - 短缺区域集合：`shortage > 0`
-- 调度成本：从 `distance_matrix_1km.parquet` 读取 `distance_km`
+- 调度成本：从同尺度 `distance_matrix_*` 读取 `distance_km`
 - 每个 `scenario_id` 可以独立求解一次，用于多场景鲁棒分析
 - 服务公平性可以基于每个短缺网格的满足率计算
 
@@ -88,10 +96,12 @@ data/processed/distance_matrix_1km.parquet
 
 ```text
 data/processed/orders_clean_futian_week.parquet
-data/processed/od_flow_grid_1km.parquet
-data/processed/grid_metadata_1km.csv
-data/processed/grid_metadata_500m.csv
-data/processed/scenario_grid_demand_1km.parquet
+data/processed/od_flow_grid_200m.parquet
+data/processed/od_flow_grid_100m.parquet
+data/processed/grid_metadata_200m.csv
+data/processed/grid_metadata_100m.csv
+data/processed/scenario_grid_demand_200m.parquet
+data/processed/scenario_grid_demand_100m.parquet
 ```
 
 推荐图表：
@@ -100,7 +110,7 @@ data/processed/scenario_grid_demand_1km.parquet
 - `net_outflow` 热力图
 - 主要 OD 流向图
 - 早晚高峰订单量对比图
-- 1km 与 500m 网格尺度对比图
+- 1km、500m、200m、100m 网格尺度对比图
 
 ## 如何直接使用数据
 
@@ -116,8 +126,8 @@ Python 读取示例：
 ```python
 import pandas as pd
 
-demand = pd.read_parquet("data/processed/scenario_grid_demand_1km.parquet")
-distance = pd.read_parquet("data/processed/distance_matrix_1km.parquet")
+demand = pd.read_parquet("data/processed/scenario_grid_demand_200m.parquet")
+distance = pd.read_parquet("data/processed/distance_matrix_200m.parquet")
 
 scenario = demand[demand["scenario_id"] == "20210510_am_peak"]
 surplus_nodes = scenario[scenario["surplus"] > 0]
@@ -162,7 +172,16 @@ python src/data/validate_rebalancing_inputs.py
 validated=true
 scenario_count=10
 grid_rows_1km=1150
+grid_rows_500m=3810
+grid_rows_200m=19140
+grid_rows_100m=61060
 od_flow_rows_1km=8660
+od_flow_rows_500m=22806
+od_flow_rows_200m=39848
+od_flow_rows_100m=46370
+distance_rows_1km=13110
+distance_rows_200m=3661482
+distance_rows_100m=37277130
 ```
 
 ## 交接注意事项
