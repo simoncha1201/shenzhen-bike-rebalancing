@@ -1,0 +1,11 @@
+scenario_id,date,peak_type,orders
+20210510_am_peak,2021-05-10,am_peak,26664
+20210510_pm_peak,2021-05-10,pm_peak,5630
+20210511_am_peak,2021-05-11,am_peak,3758
+20210511_pm_peak,2021-05-11,pm_peak,5323
+20210512_am_peak,2021-05-12,am_peak,4567
+20210512_pm_peak,2021-05-12,pm_peak,4034
+20210513_am_peak,2021-05-13,am_peak,4284
+20210513_pm_peak,2021-05-13,pm_peak,4226
+20210514_am_peak,2021-05-14,am_peak,3763
+20210514_pm_peak,2021-05-14,pm_peak,4123

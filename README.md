@@ -180,4 +180,4 @@ python src/data/build_rebalancing_inputs.py data/raw/*.jsonl
 python src/data/validate_rebalancing_inputs.py
 ```
 
-主要输出位于 `data/processed/`。这些数据文件默认不提交到 GitHub。
+主要输出位于 `data/processed/`。这些处理后数据会提交到 GitHub，队友 pull 后可以直接用于建模和可视化；`data/raw/` 原始下载数据仍然只保留在本地。

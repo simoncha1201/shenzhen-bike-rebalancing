@@ -20,6 +20,7 @@
 | `docs/data_handoff.md` | 本交接文档 |
 | `tests/test_data_pipeline.py` | 数据处理逻辑测试 |
 | `requirements.txt` | 运行数据部分所需 Python 依赖 |
+| `data/processed/` | 已清洗和聚合后的模型/可视化输入数据 |
 
 ### 留在本地的内容
 
@@ -28,15 +29,14 @@
 | 路径或文件 | 原因 |
 | --- | --- |
 | `data/raw/` | 原始订单数据较大，不适合提交 Git |
-| `data/processed/` | 处理后数据文件包含大量派生数据，应本地保存或私下共享 |
 | `接口信息.png`、`接口测试.png` | 截图中包含 `appKey`，不能公开上传 |
 | `.pytest_cache/`、`__pycache__/` | 本地运行缓存，没有协作价值 |
 
-`.gitignore` 已经忽略上述本地数据和敏感截图。
+`.gitignore` 已经忽略原始数据和敏感截图，但允许 `data/processed/` 上传，方便队友 pull 后直接建模。
 
 ## 当前本地数据结果
 
-当前本地已经生成了一版可用的数据交付物：
+仓库中已经提供了一版可用的数据交付物：
 
 | 指标 | 数量 |
 | --- | ---: |
@@ -55,7 +55,7 @@
 
 ## 给模型负责人的使用方式
 
-模型负责人优先使用下面两个文件：
+模型负责人 pull 仓库后，优先使用下面两个文件：
 
 ```text
 data/processed/scenario_grid_demand_1km.parquet
@@ -84,7 +84,7 @@ data/processed/distance_matrix_1km.parquet
 
 ## 给结果分析与可视化负责人的使用方式
 
-可视化负责人优先使用下面几个文件：
+可视化负责人 pull 仓库后，优先使用下面几个文件：
 
 ```text
 data/processed/orders_clean_futian_week.parquet
@@ -102,7 +102,29 @@ data/processed/scenario_grid_demand_1km.parquet
 - 早晚高峰订单量对比图
 - 1km 与 500m 网格尺度对比图
 
-## 如何复现数据
+## 如何直接使用数据
+
+队友拉取仓库后，安装依赖即可直接读取已提交的数据：
+
+```powershell
+git pull
+pip install -r requirements.txt
+```
+
+Python 读取示例：
+
+```python
+import pandas as pd
+
+demand = pd.read_parquet("data/processed/scenario_grid_demand_1km.parquet")
+distance = pd.read_parquet("data/processed/distance_matrix_1km.parquet")
+
+scenario = demand[demand["scenario_id"] == "20210510_am_peak"]
+surplus_nodes = scenario[scenario["surplus"] > 0]
+shortage_nodes = scenario[scenario["shortage"] > 0]
+```
+
+## 如何重新生成数据
 
 1. 安装依赖：
 
@@ -145,7 +167,7 @@ od_flow_rows_1km=8660
 
 ## 交接注意事项
 
-- GitHub 上只保存复现流程、代码、测试和说明文档。
-- 本地数据文件可以通过网盘、U 盘或课堂提交系统单独共享。
+- GitHub 上保存复现流程、代码、测试、说明文档和 `data/processed/` 处理后数据。
+- 本地 `data/raw/` 原始接口数据不上传。
 - 不要把 `appKey`、接口截图、原始订单数据提交到公开仓库。
 - 如果后续需要全量数据，可以把 `download_orders.py` 的 `--max-pages` 提高到目标周总页数约 `787` 页，再重新运行构建脚本。

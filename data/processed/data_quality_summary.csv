@@ -1,0 +1,7 @@
+stage,rows_removed,rows_remaining,notes
+raw_records,0,291000,Input records
+drop_missing_required,0,291000,Missing time or coordinate
+drop_invalid_duration,4254,286746,Duration outside 1-120 minutes
+drop_invalid_shenzhen_coordinates,226,286520,Outside broad Shenzhen coordinate range
+drop_outside_futian_bbox,217022,69498,Neither endpoint is inside Futian bounding box
+drop_duplicates,141,69357,Duplicate order-like records
