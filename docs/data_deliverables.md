@@ -13,7 +13,13 @@
 | 原始订单样本 | 291,000 |
 | 清洗后福田相关订单 | 69,357 |
 | 1km 网格需求表行数 | 1,150 |
+| 500m 网格需求表行数 | 3,810 |
+| 200m 网格需求表行数 | 19,140 |
+| 100m 网格需求表行数 | 61,060 |
 | 1km OD 流行数 | 8,660 |
+| 500m OD 流行数 | 22,806 |
+| 200m OD 流行数 | 39,848 |
+| 100m OD 流行数 | 46,370 |
 | 高峰场景数 | 10 |
 
 ## 场景订单量
@@ -38,12 +44,10 @@
 | 文件 | 用途 | 交给谁 |
 | --- | --- | --- |
 | `orders_clean_futian_week.parquet` | 清洗后的福田相关订单 | 数据/可视化 |
-| `scenario_grid_demand_1km.parquet` | 主模型输入：每个场景每个 1km 网格的供需差异 | 模型 |
-| `scenario_grid_demand_500m.parquet` | 网格尺度敏感性分析 | 模型/可视化 |
-| `od_flow_grid_1km.parquet` | 网格 OD 流，用于流向分析和可视化 | 模型/可视化 |
-| `distance_matrix_1km.parquet` | 网格中心距离矩阵，用于调度成本 | 模型 |
-| `grid_metadata_1km.csv` | 1km 网格中心坐标和编号 | 模型/可视化 |
-| `grid_metadata_500m.csv` | 500m 网格中心坐标和编号 | 可视化 |
+| `scenario_grid_demand_{1km,500m,200m,100m}.parquet` | 每个场景每个网格的供需差异 | 模型/可视化 |
+| `od_flow_grid_{1km,500m,200m,100m}.parquet` | 网格 OD 流，用于流向分析和可视化 | 模型/可视化 |
+| `distance_matrix_{1km,200m,100m}.parquet` | 网格中心距离矩阵，用于调度成本 | 模型 |
+| `grid_metadata_{1km,500m,200m,100m}.csv` | 各尺度网格中心坐标和编号 | 模型/可视化 |
 | `data_quality_summary.csv` | 清洗过程各阶段删除数量 | 数据 |
 | `scenario_order_counts.csv` | 每个场景订单量 | 数据/分析 |
 
@@ -86,9 +90,9 @@ python src/data/validate_rebalancing_inputs.py
 
 ## 给模型负责人的接口说明
 
-主模型应优先读取 `scenario_grid_demand_1km.parquet` 和 `distance_matrix_1km.parquet`。
+如果 1km 过粗，主模型可直接读取 `scenario_grid_demand_200m.parquet` / `distance_matrix_200m.parquet`，或更细的 `scenario_grid_demand_100m.parquet` / `distance_matrix_100m.parquet`。100m 距离矩阵约 3,728 万行，读取时建议按场景先筛选供需网格，再合并需要的距离边。
 
-`scenario_grid_demand_1km.parquet` 的核心字段：
+`scenario_grid_demand_*` 的核心字段：
 
 - `scenario_id`：场景编号，例如 `20210510_am_peak`
 - `grid_id`：网格编号
@@ -98,7 +102,7 @@ python src/data/validate_rebalancing_inputs.py
 - `shortage`：`max(net_outflow, 0)`，短缺量
 - `surplus`：`max(-net_outflow, 0)`，富余量
 
-模型中的富余集合可取 `surplus > 0` 的网格，短缺集合可取 `shortage > 0` 的网格，调度成本可从 `distance_matrix_1km.parquet` 读取。
+模型中的富余集合可取 `surplus > 0` 的网格，短缺集合可取 `shortage > 0` 的网格，调度成本可从同尺度 `distance_matrix_*` 读取。
 
 ## 注意事项
 

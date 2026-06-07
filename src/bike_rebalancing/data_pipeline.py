@@ -11,6 +11,8 @@ import json
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 CANONICAL_COLUMNS = [
@@ -325,6 +327,52 @@ def build_distance_matrix(grid_meta: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def write_distance_matrix_parquet(grid_meta: pd.DataFrame, path: str | Path, chunk_origins: int = 256) -> int:
+    """Write pairwise grid-center distances to parquet in origin chunks.
+
+    Returns the number of origin-destination rows written. This avoids holding
+    the full dense matrix in memory for fine grids such as 100m.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if grid_meta.empty:
+        empty = pd.DataFrame(columns=["from_grid_id", "to_grid_id", "distance_km"])
+        empty.to_parquet(path, index=False)
+        return 0
+
+    ids = grid_meta["grid_id"].astype(str).to_numpy()
+    lng = grid_meta["center_lng"].astype(float).to_numpy()
+    lat = grid_meta["center_lat"].astype(float).to_numpy()
+    n_grids = len(grid_meta)
+    writer: pq.ParquetWriter | None = None
+    total_rows = 0
+
+    try:
+        for start in range(0, n_grids, chunk_origins):
+            stop = min(start + chunk_origins, n_grids)
+            origin_idx = np.arange(start, stop)
+            distances = _pairwise_haversine_km(lng[origin_idx], lat[origin_idx], lng, lat)
+            keep = origin_idx[:, None] != np.arange(n_grids)[None, :]
+
+            table = pa.table(
+                {
+                    "from_grid_id": np.repeat(ids[origin_idx], n_grids)[keep.ravel()],
+                    "to_grid_id": np.tile(ids, len(origin_idx))[keep.ravel()],
+                    "distance_km": distances.ravel()[keep.ravel()],
+                }
+            )
+            if writer is None:
+                writer = pq.ParquetWriter(path, table.schema)
+            writer.write_table(table)
+            total_rows += table.num_rows
+    finally:
+        if writer is not None:
+            writer.close()
+
+    return total_rows
+
+
 def scenario_counts(orders: pd.DataFrame, start_date: str | date = "2021-05-10", end_date: str | date = "2021-05-14") -> pd.DataFrame:
     """Count cleaned orders by scenario for the quality summary."""
     gridded, _ = assign_grid_columns(orders, 1000)
@@ -340,6 +388,18 @@ def haversine_km(lng1: float, lat1: float, lng2: float, lat2: float) -> float:
     d_lat = radians(lat2 - lat1)
     a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lng / 2) ** 2
     return 2 * radius_km * asin(sqrt(a))
+
+
+def _pairwise_haversine_km(origin_lng: np.ndarray, origin_lat: np.ndarray, dest_lng: np.ndarray, dest_lat: np.ndarray) -> np.ndarray:
+    radius_km = 6371.0088
+    lng1 = np.radians(origin_lng)[:, None]
+    lat1 = np.radians(origin_lat)[:, None]
+    lng2 = np.radians(dest_lng)[None, :]
+    lat2 = np.radians(dest_lat)[None, :]
+    d_lng = lng2 - lng1
+    d_lat = lat2 - lat1
+    a = np.sin(d_lat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(d_lng / 2) ** 2
+    return 2 * radius_km * np.arcsin(np.sqrt(a))
 
 
 def _drop_mask(df: pd.DataFrame, mask: pd.Series) -> tuple[pd.DataFrame, int]:
@@ -393,4 +453,3 @@ def _scenario_frame(start_date: str | date, end_date: str | date) -> pd.DataFram
                 }
             )
     return pd.DataFrame(rows)
-
