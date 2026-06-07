@@ -1,0 +1,25 @@
+vehicle_id,capacity_bikes,speed_kmh,start_grid_id,start_lng,start_lat,load_time_min_per_bike,unload_time_min_per_bike,fixed_stop_time_min,max_route_time_min,available,notes
+truck_01,20,22,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed small van; central 1km depot grid
+truck_02,20,22,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed small van; central 1km depot grid
+truck_03,20,22,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed small van; central 1km depot grid
+truck_04,20,22,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed small van; central 1km depot grid
+truck_05,20,22,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed small van; central 1km depot grid
+truck_06,20,22,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed small van; central 1km depot grid
+truck_07,24,21,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed standard rebalancing vehicle
+truck_08,24,21,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed standard rebalancing vehicle
+truck_09,24,21,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed standard rebalancing vehicle
+truck_10,24,21,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed standard rebalancing vehicle
+truck_11,24,21,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed standard rebalancing vehicle
+truck_12,24,21,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed standard rebalancing vehicle
+truck_13,28,20,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed medium rebalancing vehicle
+truck_14,28,20,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed medium rebalancing vehicle
+truck_15,28,20,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed medium rebalancing vehicle
+truck_16,28,20,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed medium rebalancing vehicle
+truck_17,28,20,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed medium rebalancing vehicle
+truck_18,28,20,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed medium rebalancing vehicle
+truck_19,32,18,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed large rebalancing vehicle; slower in peak traffic
+truck_20,32,18,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed large rebalancing vehicle; slower in peak traffic
+truck_21,32,18,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed large rebalancing vehicle; slower in peak traffic
+truck_22,32,18,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed large rebalancing vehicle; slower in peak traffic
+truck_23,32,18,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed large rebalancing vehicle; slower in peak traffic
+truck_24,32,18,1000m_r005_c008,114.06266855872391,22.539407114624506,0.60,0.45,4,180,1,Assumed large rebalancing vehicle; slower in peak traffic
