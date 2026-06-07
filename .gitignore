@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data artifacts
+data/raw/
+data/interim/
+data/processed/
+*.parquet
+*.csv
+*.xlsx
+*.jsonl
+
+# Local screenshots that may include API keys
+接口*.png

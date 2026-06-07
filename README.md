@@ -143,3 +143,41 @@ Update data field documentation
 4. 建立一个可运行的基线模型。
 5. 对需求分布和模型结果进行可视化分析。
 6. 根据分析结果迭代数据处理和模型设计。
+
+## 数据负责人运行入口
+
+数据来源、接口参数和清洗规则见 `docs/data_source.md`。
+当前数据交付物和质量摘要见 `docs/data_deliverables.md`。
+数据负责人交接说明见 `docs/data_handoff.md`。
+
+先在 PowerShell 中设置深圳开放平台的 `appKey`：
+
+```powershell
+$env:SHENZHEN_OPEN_DATA_APP_KEY="你的appKey"
+```
+
+下载一页样本数据：
+
+```powershell
+python src/data/download_orders.py --max-pages 1 --rows 1000
+```
+
+下载 10 个高峰窗口的代表页样本：
+
+```powershell
+python src/data/download_peak_sample.py --pages-per-window 2
+```
+
+生成福田区一周早晚高峰再平衡模型输入表：
+
+```powershell
+python src/data/build_rebalancing_inputs.py data/raw/*.jsonl
+```
+
+校验数据产物：
+
+```powershell
+python src/data/validate_rebalancing_inputs.py
+```
+
+主要输出位于 `data/processed/`。这些数据文件默认不提交到 GitHub。
