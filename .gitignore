@@ -227,5 +227,15 @@ data/interim/
 !data/processed/
 !data/processed/**
 
+# LaTeX / PDF compile artifacts
+docs/*.aux
+docs/*.out
+docs/*.log
+docs/*.toc
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.synctex.gz
+docs/*.tex
+
 # Local screenshots that may include API keys
 接口*.png

@@ -1,0 +1,2 @@
+status,objective,proven_optimal,nodes_explored,best_bound,gap,runtime_seconds
+heuristic_service_level_not_met,500592.982960511,0,6000,NaN,NaN,691.2931434

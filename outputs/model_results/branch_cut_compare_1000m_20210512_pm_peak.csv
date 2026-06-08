@@ -1,0 +1,2 @@
+status,proven_optimal,heuristic_objective,exact_objective,gap_percent,cut_count,cut_rounds,runtime_seconds,last_solver_status,last_nodes_explored,last_best_bound,last_solver_gap
+heuristic_proven_optimal_for_validation,1,4798.44884571175,4798.44884571175,0,0,1,96.8076356,no_integer_solution,1,Inf,Inf

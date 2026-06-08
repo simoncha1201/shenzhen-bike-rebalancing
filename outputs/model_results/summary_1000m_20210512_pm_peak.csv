@@ -1,2 +1,2 @@
 status,objective,proven_optimal,nodes_explored,best_bound,gap,runtime_seconds
-heuristic_feasible,3667.64072652633,0,6000,NaN,NaN,15.1563461
+heuristic_feasible,3683.62214161498,0,6000,NaN,NaN,29.0481625

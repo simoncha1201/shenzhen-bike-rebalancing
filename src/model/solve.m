@@ -18,6 +18,26 @@ opts = cfg.solver;
 if ~isfield(opts, "simplex_display_interval")
     opts.simplex_display_interval = 500;
 end
+if ~isfield(opts, "remove_dependent_equalities")
+    opts.remove_dependent_equalities = false;
+end
+if ~isfield(opts, "max_dense_rank_rows")
+    opts.max_dense_rank_rows = 300;
+end
+if ~isfield(opts, "scale_rows")
+    opts.scale_rows = true;
+end
+if ~isfield(opts, "max_lp_rows")
+    opts.max_lp_rows = inf;
+end
+if ~isfield(opts, "max_lp_nonzeros")
+    opts.max_lp_nonzeros = inf;
+end
+
+warnNear = warning("off", "MATLAB:nearlySingularMatrix");
+warnSing = warning("off", "MATLAB:singularMatrix");
+warnCleanup = onCleanup(@() restoreMatrixWarnings(warnNear, warnSing));
+
 tStart = tic;
 
 root = makeNode(mdl.lb, mdl.ub, 0);
@@ -38,8 +58,11 @@ if initial.feasible
 end
 
 while ~isempty(stack)
-    if nodesExplored >= opts.max_branch_nodes || toc(tStart) >= opts.max_seconds
-        status = "limit_reached";
+    if nodesExplored >= opts.max_branch_nodes
+        status = "node_limit";
+        break;
+    elseif toc(tStart) >= opts.max_seconds
+        status = "time_limit";
         break;
     end
 
@@ -65,8 +88,18 @@ while ~isempty(stack)
     elseif lp.status == "unbounded"
         status = "lp_unbounded";
         break;
+    elseif lp.status == "time_limit"
+        status = "time_limit";
+        break;
+    elseif lp.status == "iteration_limit"
+        status = "lp_iteration_limit";
+        break;
+    elseif lp.status == "lp_size_limit"
+        status = "lp_size_limit";
+        break;
     elseif lp.status ~= "optimal"
-        continue;
+        status = "lp_" + string(lp.status);
+        break;
     end
 
     bestBound = min(bestBound, lp.obj);
@@ -122,7 +155,7 @@ if isempty(bestX)
     return;
 end
 
-if isempty(stack) && status ~= "limit_reached" && status ~= "lp_unbounded"
+if isempty(stack) && status == "not_started"
     status = "optimal";
 end
 
@@ -197,7 +230,7 @@ end
 end
 
 function lp = solveLpRelaxation(mdl, lb, ub, opts, tStart)
-[A, b, c, shift, baseObj, mapBack, ineqRowCount] = buildStandardLp(mdl, lb, ub);
+[A, b, c, shift, baseObj, mapBack, ineqRowCount] = buildStandardLp(mdl, lb, ub, opts);
 if isinf(baseObj)
     lp = struct("status", "infeasible", "x", [], "obj", inf);
     return;
@@ -205,6 +238,10 @@ end
 if isempty(A)
     x = shift;
     lp = struct("status", "optimal", "x", x, "obj", mdl.c' * x);
+    return;
+end
+if size(A, 1) > opts.max_lp_rows || nnz(A) > opts.max_lp_nonzeros
+    lp = struct("status", "lp_size_limit", "x", [], "obj", inf);
     return;
 end
 
@@ -223,7 +260,7 @@ x(mapBack) = shift(mapBack) + z;
 lp = struct("status", "optimal", "x", x, "obj", std.obj + baseObj);
 end
 
-function [A, b, c, shift, baseObj, mapBack, ineqRowCount] = buildStandardLp(mdl, lb, ub)
+function [A, b, c, shift, baseObj, mapBack, ineqRowCount] = buildStandardLp(mdl, lb, ub, opts)
 lb = lb(:);
 ub = ub(:);
 if any(lb > ub)
@@ -251,6 +288,28 @@ ubRhs = ub(mapBack(finiteUb)) - lb(mapBack(finiteUb));
 
 Aineq = [Aineq; ubRows];
 bineq = [bineq; ubRhs];
+
+[Aineq, bineq, ok] = removeZeroIneqRows(Aineq, bineq);
+if ~ok
+    [A, b, c, shift, baseObj, mapBack, ineqRowCount] = infeasibleStandardLp();
+    return;
+end
+[Aeq, beq, ok] = removeZeroEqRows(Aeq, beq);
+if ~ok
+    [A, b, c, shift, baseObj, mapBack, ineqRowCount] = infeasibleStandardLp();
+    return;
+end
+if opts.remove_dependent_equalities
+    [Aeq, beq, ok] = removeDependentEqualities(Aeq, beq, opts);
+    if ~ok
+        [A, b, c, shift, baseObj, mapBack, ineqRowCount] = infeasibleStandardLp();
+        return;
+    end
+end
+if opts.scale_rows
+    [Aineq, bineq] = scaleConstraintRows(Aineq, bineq);
+    [Aeq, beq] = scaleConstraintRows(Aeq, beq);
+end
 
 mIneq = size(Aineq, 1);
 mEq = size(Aeq, 1);
@@ -287,6 +346,72 @@ shift = [];
 baseObj = inf;
 mapBack = [];
 ineqRowCount = 0;
+end
+
+function [A, b, ok] = removeZeroIneqRows(A, b)
+% 删除 0 <= b 的冗余不等式；若 b < 0，则该 LP 松弛不可行。
+ok = true;
+rowNorm = full(sum(abs(A), 2));
+zeroRows = rowNorm < 1.0e-12;
+if any(zeroRows & b < -1.0e-9)
+    ok = false;
+    return;
+end
+A = A(~zeroRows, :);
+b = b(~zeroRows);
+end
+
+function [A, b, ok] = removeZeroEqRows(A, b)
+% 删除 0 = 0 的冗余等式；若 0 = b 且 b 非零，则该 LP 松弛不可行。
+ok = true;
+rowNorm = full(sum(abs(A), 2));
+zeroRows = rowNorm < 1.0e-12;
+if any(zeroRows & abs(b) > 1.0e-9)
+    ok = false;
+    return;
+end
+A = A(~zeroRows, :);
+b = b(~zeroRows);
+end
+
+function [A, b, ok] = removeDependentEqualities(A, b, opts)
+% 用秩揭示 QR 删除线性相关等式，减少人工变量退基时的病态基。
+ok = true;
+m = size(A, 1);
+if m <= 1 || m > opts.max_dense_rank_rows
+    return;
+end
+
+denseA = full(A);
+tolRank = 1.0e-10 * max(1, max(size(denseA))) * max(1, norm(denseA, 1));
+[~, rA, pivA] = qr(denseA', "vector");
+rankA = sum(abs(diag(rA)) > tolRank);
+
+aug = [denseA, b(:)];
+tolAug = 1.0e-10 * max(1, max(size(aug))) * max(1, norm(aug, 1));
+[~, rAug] = qr(aug', 0);
+rankAug = sum(abs(diag(rAug)) > tolAug);
+if rankAug > rankA
+    ok = false;
+    return;
+end
+
+if rankA < m
+    keepRows = sort(pivA(1:rankA));
+    A = A(keepRows, :);
+    b = b(keepRows);
+end
+end
+
+function [A, b] = scaleConstraintRows(A, b)
+% 将每行最大系数缩放到 1 附近，降低 Big-M 和时间系数造成的尺度差异。
+if isempty(A)
+    return;
+end
+rowScale = full(max(abs(A), [], 2));
+rowScale(rowScale < 1.0) = 1.0;
+A = spdiags(1 ./ rowScale, 0, size(A, 1), size(A, 1)) * A;
+b = b ./ rowScale;
 end
 
 function out = twoPhaseSimplex(A, b, c, ineqRowCount, opts, tStart)
@@ -359,14 +484,14 @@ while any(basis > nOriginal)
     artRows = find(basis > nOriginal);
     progressed = false;
     B = A1(:, basis);
-    BinvA = B \ A1(:, 1:nOriginal);
+    BinvA = basisSolve(B, A1(:, 1:nOriginal));
     currentBasis = basis(basis <= nOriginal);
 
     for r = artRows(:)'
         candidates = setdiff(1:nOriginal, currentBasis);
         coeff = abs(BinvA(r, candidates));
-        pos = find(coeff > tol, 1);
-        if ~isempty(pos)
+        [bestCoeff, pos] = max(coeff);
+        if ~isempty(pos) && bestCoeff > tol
             basis(r) = candidates(pos);
             progressed = true;
             break;
@@ -410,13 +535,13 @@ for iter = 1:maxIter
     end
 
     B = A(:, basis);
-    xB = B \ b;
+    xB = basisSolve(B, b);
     if any(xB < -1.0e-7)
         out = struct("status", "infeasible", "x", [], "obj", inf, "basis", basis);
         return;
     end
 
-    y = B' \ c(basis);
+    y = basisSolve(B', c(basis));
     rc = c - A' * y;
     rc(basis) = 0;
     [minRc, entering] = min(rc);
@@ -428,7 +553,7 @@ for iter = 1:maxIter
         return;
     end
 
-    d = B \ A(:, entering);
+    d = basisSolve(B, A(:, entering));
     positive = d > tol;
     if ~any(positive)
         out = struct("status", "unbounded", "x", [], "obj", -inf, "basis", basis);
@@ -445,6 +570,19 @@ for iter = 1:maxIter
 end
 
 out = struct("status", "iteration_limit", "x", [], "obj", inf, "basis", basis);
+end
+
+function x = basisSolve(B, rhs)
+% 基矩阵求解的统一入口：避免 MATLAB 在退化基上反复刷屏。
+x = B \ rhs;
+if any(~isfinite(x(:))) && size(B, 1) <= 1500
+    x = lsqminnorm(full(B), full(rhs));
+end
+end
+
+function restoreMatrixWarnings(stateNear, stateSing)
+warning(stateNear);
+warning(stateSing);
 end
 
 function decoded = decodeSolution(x, mdl)
@@ -488,6 +626,14 @@ decoded.shortage = makeTable(shortageRows, ["grid_id","shortage_bikes","unmet_bi
 decoded.vehicle_time = table(data.vehicle_ids(:), x(idx.tk(:)), VariableNames=["vehicle_id","route_time_min"]);
 decoded.objective_parts = table(x(idx.t), sum(x(idx.tk(:))), sum(x(idx.unmet(:))), ...
     VariableNames=["makespan_min","total_vehicle_time_min","total_unmet_bikes"]);
+decoded.node_copies = makeNodeCopyTable(data);
+end
+
+function tbl = makeNodeCopyTable(data)
+tbl = table(data.node_ids(:), data.original_node_ids(:), data.visit_copy_index(:), ...
+    data.visit_copy_count(:), data.shortage(:), data.surplus(:), ...
+    VariableNames=["grid_id","original_grid_id","visit_copy_index", ...
+    "visit_copy_count","shortage_bikes","surplus_bikes"]);
 end
 
 function tbl = makeTable(rows, names)

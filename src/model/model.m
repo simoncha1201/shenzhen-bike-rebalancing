@@ -12,12 +12,13 @@ end
 if ~ismember(cfg.grid_size_m, cfg.available_grid_sizes)
     error("Unsupported grid size: %d", cfg.grid_size_m);
 end
-if cfg.grid_size_m ~= 1000 && cfg.grid_size_m ~= 500
-    error("Grid size %dm is reserved, but no processed demand file exists yet.", cfg.grid_size_m);
-end
 
-demand = readDemandTable(cfg);
-gridMeta = readtable(fullfile(cfg.data_dir, sprintf("grid_metadata_%s.csv", gridTag(cfg.grid_size_m))));
+dataFiles = resolveProcessedDataFiles(cfg);
+demand = readProcessedTable(dataFiles.demand, "scenario demand");
+requireColumns(demand, ["scenario_id","grid_id","departures","arrivals","net_outflow","shortage","surplus"], ...
+    "scenario demand");
+gridMeta = readProcessedTable(dataFiles.grid_metadata, "grid metadata");
+requireColumns(gridMeta, ["grid_id","center_lng","center_lat","grid_size_m"], "grid metadata");
 vehicles = readtable(cfg.vehicle_param_file, TextType="string");
 
 if cfg.use_available_vehicles_only && any(strcmp("available", vehicles.Properties.VariableNames))
@@ -37,12 +38,16 @@ nodes = selectServiceNodes(scenarioRows, cfg);
 if isempty(nodes)
     error("No service nodes selected. Check shortage/surplus thresholds.");
 end
+[nodes, splitInfo] = splitServiceNodes(nodes, vehicles, cfg);
 
 [nodes, depot] = attachCoordinates(nodes, gridMeta, vehicles);
-distKm = buildDistanceKm(nodes, depot);
+distKm = buildDistanceKm(nodes, depot, cfg, dataFiles);
 edges = buildSparseEdges(distKm, cfg);
 
 data = struct();
+data.grid_size_m = cfg.grid_size_m;
+data.grid_tag = string(gridTag(cfg.grid_size_m));
+data.data_files = dataFiles;
 data.nodes = nodes;
 data.vehicles = vehicles;
 data.depot = depot;
@@ -55,6 +60,10 @@ data.edge_count = height(edges);
 data.n = height(nodes);
 data.k = height(vehicles);
 data.node_ids = string(nodes.grid_id);
+data.original_node_ids = string(nodes.original_grid_id);
+data.visit_copy_index = double(nodes.visit_copy_index);
+data.visit_copy_count = double(nodes.visit_copy_count);
+data.node_split = splitInfo;
 data.vehicle_ids = string(vehicles.vehicle_id);
 data.surplus = double(nodes.surplus);
 data.shortage = double(nodes.shortage);
@@ -65,6 +74,10 @@ data.unload_time = vehicleColumn(vehicles, "unload_time_min_per_bike", cfg.defau
 data.fixed_stop_time = vehicleColumn(vehicles, "fixed_stop_time_min", cfg.default_fixed_stop_time_min);
 data.max_route_time = vehicleColumn(vehicles, "max_route_time_min", cfg.default_max_route_time_min);
 data.beta = cfg.beta_unmet_shortage * cfg.priority_shortage_multiplier * ones(data.n, 1);
+data.od_flow = readOptionalDataTable(cfg, dataFiles.od_flow, ...
+    ["scenario_id","start_grid_id","end_grid_id","order_count"], "OD flow");
+data.raw_distance_matrix = readOptionalDataTable(cfg, dataFiles.distance_matrix, ...
+    ["from_grid_id","to_grid_id","distance_km"], "distance matrix");
 
 if cfg.print_edge_summary
     outDegree = accumarray(data.edge_from, 1, [data.n + 1, 1]);
@@ -100,16 +113,72 @@ mdl.data = data;
 mdl.cfg = cfg;
 end
 
-function demand = readDemandTable(cfg)
+function dataFiles = resolveProcessedDataFiles(cfg)
 tag = gridTag(cfg.grid_size_m);
-parquetFile = fullfile(cfg.data_dir, sprintf("scenario_grid_demand_%s.parquet", tag));
-csvFile = fullfile(cfg.data_dir, sprintf("scenario_grid_demand_%s.csv", tag));
+dataFiles = struct();
+dataFiles.grid_tag = string(tag);
+dataFiles.demand = findProcessedFile(cfg, "scenario_grid_demand", tag, true);
+dataFiles.grid_metadata = findProcessedFile(cfg, "grid_metadata", tag, true);
+dataFiles.od_flow = findProcessedFile(cfg, "od_flow_grid", tag, false);
+dataFiles.distance_matrix = findProcessedFile(cfg, "distance_matrix", tag, false);
+end
+
+function filePath = findProcessedFile(cfg, stem, tag, required)
+csvFile = string(fullfile(cfg.data_dir, sprintf("%s_%s.csv", stem, tag)));
+parquetFile = string(fullfile(cfg.data_dir, sprintf("%s_%s.parquet", stem, tag)));
 if isfile(csvFile)
-    demand = readtable(csvFile, TextType="string");
-elseif isfile(parquetFile) && exist("parquetread", "file") == 2
-    demand = parquetread(parquetFile);
+    filePath = csvFile;
+elseif isfile(parquetFile)
+    filePath = parquetFile;
+elseif required
+    error("Missing processed data file for %s grid %s. Expected %s or %s.", ...
+        stem, tag, csvFile, parquetFile);
 else
-    error("Cannot read demand data. Provide %s or use MATLAB with parquetread for %s.", csvFile, parquetFile);
+    filePath = "";
+end
+end
+
+function tbl = readProcessedTable(filePath, label)
+if strlength(filePath) == 0 || ~isfile(filePath)
+    error("Cannot read %s: file does not exist: %s", label, filePath);
+end
+[~, ~, ext] = fileparts(filePath);
+if strcmpi(ext, ".csv")
+    tbl = readtable(filePath, TextType="string");
+elseif strcmpi(ext, ".parquet")
+    if exist("parquetread", "file") ~= 2
+        error("Cannot read %s. MATLAB parquetread is unavailable: %s", label, filePath);
+    end
+    tbl = parquetread(filePath);
+else
+    error("Unsupported %s file extension: %s", label, filePath);
+end
+end
+
+function tbl = readOptionalDataTable(cfg, filePath, requiredColumns, label)
+tbl = table();
+if strlength(filePath) == 0
+    return;
+end
+
+loadFlag = false;
+if strcmp(label, "OD flow") && isfield(cfg, "load_od_flow")
+    loadFlag = cfg.load_od_flow;
+elseif strcmp(label, "distance matrix") && isfield(cfg, "load_raw_distance_matrix")
+    loadFlag = cfg.load_raw_distance_matrix;
+end
+if ~loadFlag
+    return;
+end
+
+tbl = readProcessedTable(filePath, label);
+requireColumns(tbl, requiredColumns, label);
+end
+
+function requireColumns(tbl, requiredColumns, label)
+missingColumns = setdiff(requiredColumns, string(tbl.Properties.VariableNames), "stable");
+if ~isempty(missingColumns)
+    error("%s is missing required columns: %s", label, strjoin(missingColumns, ", "));
 end
 end
 
@@ -149,8 +218,95 @@ else
 end
 end
 
+function [nodes, splitInfo] = splitServiceNodes(nodes, vehicles, cfg)
+%SPLITSERVICENODES 将大短缺/大富余网格拆成多个访问副本，允许同一真实网格重复出现在路线中。
+minCapacity = min(double(vehicles.capacity_bikes));
+threshold = getNumericCfg(cfg, "node_split_threshold_bikes", minCapacity);
+splitUnit = getNumericCfg(cfg, "node_split_unit_bikes", minCapacity);
+maxCopies = getNumericCfg(cfg, "node_split_max_copies", inf);
+
+nodes.original_grid_id = string(nodes.grid_id);
+nodes.visit_copy_index = ones(height(nodes), 1);
+nodes.visit_copy_count = ones(height(nodes), 1);
+nodes.original_shortage = double(nodes.shortage);
+nodes.original_surplus = double(nodes.surplus);
+
+splitInfo = struct();
+splitInfo.enabled = isfield(cfg, "split_large_service_nodes") && cfg.split_large_service_nodes;
+splitInfo.threshold_bikes = threshold;
+splitInfo.unit_bikes = splitUnit;
+splitInfo.min_vehicle_capacity_bikes = minCapacity;
+splitInfo.original_node_count = height(nodes);
+splitInfo.split_node_count = height(nodes);
+splitInfo.split_original_count = 0;
+
+if ~splitInfo.enabled || height(nodes) == 0
+    return;
+end
+
+out = nodes([], :);
+splitOriginalCount = 0;
+for i = 1:height(nodes)
+    shortage = double(nodes.shortage(i));
+    surplus = double(nodes.surplus(i));
+    maxAmount = max(shortage, surplus);
+    copyCount = 1;
+    if maxAmount > threshold
+        copyCount = ceil(maxAmount / splitUnit);
+        copyCount = min(copyCount, maxCopies);
+        splitOriginalCount = splitOriginalCount + 1;
+    end
+
+    rows = repmat(nodes(i, :), copyCount, 1);
+    originalId = string(nodes.grid_id(i));
+    rows.original_grid_id = repmat(originalId, copyCount, 1);
+    rows.grid_id = compose("%s__v%02d", originalId, (1:copyCount)');
+    rows.visit_copy_index = (1:copyCount)';
+    rows.visit_copy_count = copyCount * ones(copyCount, 1);
+    rows.original_shortage = shortage * ones(copyCount, 1);
+    rows.original_surplus = surplus * ones(copyCount, 1);
+    rows.shortage = splitBikeAmount(shortage, copyCount);
+    rows.surplus = splitBikeAmount(surplus, copyCount);
+    if any(strcmp("net_outflow", rows.Properties.VariableNames))
+        rows.net_outflow = rows.shortage - rows.surplus;
+    end
+    out = [out; rows]; %#ok<AGROW>
+end
+
+nodes = out;
+splitInfo.split_node_count = height(nodes);
+splitInfo.split_original_count = splitOriginalCount;
+end
+
+function values = splitBikeAmount(amount, copyCount)
+amount = round(double(amount));
+values = zeros(copyCount, 1);
+if amount <= 0
+    return;
+end
+baseValue = floor(amount / copyCount);
+remainder = amount - baseValue * copyCount;
+values(:) = baseValue;
+if remainder > 0
+    values(1:remainder) = values(1:remainder) + 1;
+end
+end
+
+function value = getNumericCfg(cfg, name, defaultValue)
+if isfield(cfg, name) && ~isnan(cfg.(name))
+    value = cfg.(name);
+else
+    value = defaultValue;
+end
+end
+
 function [nodes, depot] = attachCoordinates(nodes, gridMeta, vehicles)
-[ok, loc] = ismember(string(nodes.grid_id), string(gridMeta.grid_id));
+if any(strcmp("original_grid_id", nodes.Properties.VariableNames))
+    lookupGridId = string(nodes.original_grid_id);
+else
+    lookupGridId = string(nodes.grid_id);
+end
+[ok, loc] = ismember(lookupGridId, string(gridMeta.grid_id));
 if any(~ok)
     error("Some selected grid IDs are missing from grid metadata.");
 end
@@ -162,7 +318,7 @@ depot.lng = double(vehicles.start_lng(1));
 depot.lat = double(vehicles.start_lat(1));
 end
 
-function distKm = buildDistanceKm(nodes, depot)
+function distKm = buildDistanceKm(nodes, depot, cfg, dataFiles)
 lng = [depot.lng; double(nodes.center_lng)];
 lat = [depot.lat; double(nodes.center_lat)];
 m = numel(lng);
@@ -174,6 +330,28 @@ for i = 1:m
         end
     end
 end
+if isfield(cfg, "use_processed_distance_matrix") && cfg.use_processed_distance_matrix
+    distKm = buildDistanceKmFromFile(nodes, dataFiles.distance_matrix, distKm);
+end
+end
+
+function distKm = buildDistanceKmFromFile(nodes, distanceFile, fallbackDistKm)
+% 使用已处理的网格距离矩阵填充服务节点之间的距离；调度中心相关边仍使用经纬度距离。
+if strlength(distanceFile) == 0 || ~isfile(distanceFile)
+    error("use_processed_distance_matrix=true, but distance matrix file is missing.");
+end
+
+distKm = fallbackDistKm;
+serviceGridIds = string(nodes.grid_id);
+distanceTable = readProcessedTable(distanceFile, "distance matrix");
+requireColumns(distanceTable, ["from_grid_id","to_grid_id","distance_km"], "distance matrix");
+[okFrom, fromIdx] = ismember(string(distanceTable.from_grid_id), serviceGridIds);
+[okTo, toIdx] = ismember(string(distanceTable.to_grid_id), serviceGridIds);
+keep = okFrom & okTo;
+fromIdx = fromIdx(keep) + 1;
+toIdx = toIdx(keep) + 1;
+linearIdx = sub2ind(size(distKm), fromIdx, toIdx);
+distKm(linearIdx) = double(distanceTable.distance_km(keep));
 end
 
 function edges = buildSparseEdges(distKm, cfg)
@@ -412,13 +590,18 @@ for kk = 1:k
 end
 end
 
-function b = addLoadConstraints(b, idx, data, cfg)
+function b = addLoadConstraints(b, idx, data, ~)
 k = data.k;
-M = max(cfg.big_m_load, max(data.capacity) + max(data.surplus) + max(data.shortage));
 edgeFrom = data.edge_from;
 edgeTo = data.edge_to;
+maxSurplus = max([0; data.surplus(:)]);
+maxShortage = max([0; data.shortage(:)]);
 
 for kk = 1:k
+    % 使用车辆相关 Big-M：M_k = 2Q_k + max_i s_i + max_j r_j。
+    % 相比统一使用很大的 M，该写法能降低病态矩阵风险，同时保持约束有效。
+    M = 2 * data.capacity(kk) + maxSurplus + maxShortage;
+
     % 车辆离开调度中心时为空载。
     b = addEq(b, idx.load(1, kk), 1, 0);
 

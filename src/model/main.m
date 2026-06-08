@@ -52,6 +52,10 @@ fprintf("运行时间：%.2f 秒\n", sol.runtime_seconds);
 
 saveOutputs(cfg, mdl, sol);
 fprintf("结果已保存到：%s\n", cfg.output_dir);
+
+if isfield(cfg, "exact_validation") && cfg.exact_validation.enabled
+    runExactValidation(cfg, mdl, sol);
+end
 end
 
 function printTopNodes(mdl)
@@ -95,4 +99,64 @@ writetable(sol.decoded.actions, fullfile(cfg.output_dir, "vehicle_actions_" + ta
 writetable(sol.decoded.shortage, fullfile(cfg.output_dir, "shortage_service_" + tag + ".csv"));
 writetable(sol.decoded.vehicle_time, fullfile(cfg.output_dir, "vehicle_time_" + tag + ".csv"));
 writetable(sol.decoded.objective_parts, fullfile(cfg.output_dir, "objective_parts_" + tag + ".csv"));
+if isfield(sol.decoded, "node_copies")
+    writetable(sol.decoded.node_copies, fullfile(cfg.output_dir, "node_copies_" + tag + ".csv"));
+end
+end
+
+function runExactValidation(cfg, mainMdl, mainSol)
+%RUNEXACTVALIDATION 比较主函数启发式解和 Branch-and-Cut 精确验证结果。
+fprintf("\n========== Branch-and-Cut 精确验证 ==========\n");
+valCfg = cfg;
+valCfg.use_mtz_subtour_elimination = false; % Branch-and-Cut 动态添加子回路割。
+valCfg.solver.display = false;
+valCfg.solver.max_seconds = cfg.exact_validation.max_seconds;
+valCfg.solver.max_branch_nodes = cfg.exact_validation.max_branch_nodes;
+valCfg.print_edge_summary = false;
+
+if isfield(cfg.exact_validation, "same_as_main_model") && cfg.exact_validation.same_as_main_model
+    valMdl = mainMdl;
+    heuristicVal = mainSol;
+    fprintf("验证模式：复用 main 已生成的同一个模型和同一个启发式解。\n");
+else
+    valCfg.max_service_nodes = cfg.exact_validation.max_service_nodes;
+    valCfg.max_vehicles_to_use = cfg.exact_validation.max_vehicles_to_use;
+    valCfg.heuristic.sa_iterations = min(cfg.heuristic.sa_iterations, 2000);
+    fprintf("验证模式：单独构造验证模型。服务节点=%d，车辆=%d。\n", ...
+        valCfg.max_service_nodes, valCfg.max_vehicles_to_use);
+    valMdl = model(valCfg);
+    heuristicVal = solve_heuristic(valMdl, valCfg);
+end
+
+fprintf("验证模型：实际节点=%d，车辆=%d，边=%d，变量=%d，整数变量=%d，时限=%d秒\n", ...
+    valMdl.data.n, valMdl.data.k, valMdl.data.edge_count, numel(valMdl.c), ...
+    numel(valMdl.intcon), cfg.exact_validation.max_seconds);
+fprintf("用于验证的启发式解：状态=%s，目标=%.6f，用时=%.2f秒，未满足=%.0f\n", ...
+    heuristicVal.status, heuristicVal.objective, heuristicVal.runtime_seconds, ...
+    heuristicVal.decoded.objective_parts.total_unmet_bikes);
+
+bc = solve_branch_cut(valMdl, valCfg, heuristicVal);
+fprintf("Branch-and-Cut：状态=%s，内部求解状态=%s，证明最优=%d，启发式上界=%.6f，精确目标=%.6f，gap=%.4f%%，割数量=%d，分支节点=%d，下界=%.6f，用时=%.2f秒\n", ...
+    bc.status, bc.last_solver_status, bc.proven_optimal, bc.heuristic_objective, bc.exact_objective, ...
+    bc.gap_percent, bc.cut_count, bc.last_nodes_explored, bc.last_best_bound, bc.runtime_seconds);
+
+if bc.status == "node_limit"
+    fprintf("提示：本轮是达到分支节点上限 %d 后停止，并不是达到 %.0f 秒时间上限。\n", ...
+        cfg.exact_validation.max_branch_nodes, cfg.exact_validation.max_seconds);
+elseif bc.status == "time_limit"
+    fprintf("提示：本轮达到 %.0f 秒时间上限后停止。\n", cfg.exact_validation.max_seconds);
+elseif bc.status == "lp_size_limit"
+    fprintf("提示：验证 LP 超过保护规模后停止；主启发式结果已正常保存，可继续用于可视化。\n");
+elseif bc.status == "lp_iteration_limit"
+    fprintf("提示：验证 LP 单纯形迭代达到上限后停止；主启发式结果已正常保存。\n");
+end
+
+tag = string(cfg.grid_size_m) + "m_" + string(cfg.scenario_id);
+compare = table(string(bc.status), bc.proven_optimal, bc.heuristic_objective, ...
+    bc.exact_objective, bc.gap_percent, bc.cut_count, bc.cut_rounds, bc.runtime_seconds, ...
+    string(bc.last_solver_status), bc.last_nodes_explored, bc.last_best_bound, bc.last_solver_gap, ...
+    VariableNames=["status","proven_optimal","heuristic_objective","exact_objective", ...
+    "gap_percent","cut_count","cut_rounds","runtime_seconds", ...
+    "last_solver_status","last_nodes_explored","last_best_bound","last_solver_gap"]);
+writetable(compare, fullfile(cfg.output_dir, "branch_cut_compare_" + tag + ".csv"));
 end
