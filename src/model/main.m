@@ -1,4 +1,4 @@
-function main()
+function main(overrides)
 %MAIN 共享单车再平衡模型主入口。
 %
 % 运行流程：
@@ -10,7 +10,12 @@ function main()
 thisDir = fileparts(mfilename("fullpath"));
 addpath(thisDir);
 
+if nargin < 1
+    overrides = struct();
+end
+
 cfg = prama();
+cfg = applyOverrides(cfg, overrides);
 if ~isfolder(cfg.output_dir)
     mkdir(cfg.output_dir);
 end
@@ -55,6 +60,21 @@ fprintf("结果已保存到：%s\n", cfg.output_dir);
 
 if isfield(cfg, "exact_validation") && cfg.exact_validation.enabled
     runExactValidation(cfg, mdl, sol);
+end
+end
+
+function cfg = applyOverrides(cfg, overrides)
+%APPLYOVERRIDES 用于批量补跑不同网格或场景，不影响 prama.m 默认配置。
+if isempty(overrides)
+    return;
+end
+if ~isstruct(overrides)
+    error("main 的覆盖参数必须是 struct。");
+end
+
+names = fieldnames(overrides);
+for i = 1:numel(names)
+    cfg.(names{i}) = overrides.(names{i});
 end
 end
 
