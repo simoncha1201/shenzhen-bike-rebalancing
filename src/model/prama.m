@@ -81,8 +81,19 @@ cfg.heuristic.initial_temperature = 80;  % 模拟退火初始温度。
 cfg.heuristic.cooling_rate = 0.996;      % 每次迭代后的降温系数。
 cfg.heuristic.min_temperature = 1.0e-4;  % 最低温度。
 cfg.heuristic.progress_interval = 500;   % 每隔多少次迭代打印一次进度。
-cfg.heuristic.neighbor_sample_limit = 100000; % 贪心阶段每轮最多评估的候选动作数量，500m 下需要覆盖更多供需组合。
+cfg.heuristic.neighbor_sample_limit = 100000; % 兼容保留：旧贪心每轮候选采样上限；现贪心已向量化评估全部候选，不再使用该截断。
 cfg.heuristic.allow_unserved_after_target = true; % 达到服务水平后，仍允许继续加入能改善目标的任务。
+
+%% 最小费用流任务分配参数（图论分配，先保证服务水平）
+cfg.heuristic.init_method = "greedy";        % 初解构造方式："greedy"（默认，任务整合更好）| "flow"（最小费用流构造，细网格上因任务碎片化装车更少）。
+cfg.heuristic.flow_cost_metric = "distance"; % 调度弧费用度量："distance" | "time"，二者均按车速折算成 gamma 加权成本。
+cfg.heuristic.flow_tol = 1.0e-9;             % 最小费用流增广的数值容差。
+cfg.heuristic.flow_max_augment = 20000;      % 最大增广次数上限（防御性，正常远低于此）。
+cfg.heuristic.flow_max_pairs_per_node = inf; % 每个短缺点保留最近 K 个富余点的弧；inf=不稀疏化（求精确分配下界），有限值可加速大规模实例。
+cfg.heuristic.enable_add_task_move = true;   % 是否启用 SA 的 add-task 邻域（从 remaining 池新增调度，补救服务水平）。
+cfg.heuristic.add_task_move_weight = 0.15;   % add-task 邻域被触发的概率，其余概率走四种重排邻域。
+cfg.heuristic.num_restarts = 8;              % 多起点模拟退火链数：从同一构造初解出发跑多条不同种子的 SA，取最优（串行实测目标值小幅改善）。
+cfg.heuristic.use_parallel = false;          % 多起点 SA 是否用 parfor 并行：实测无收益（SA 仅占~1s，而 parpool 冷启动开销大），默认关闭；保留接口供大实例尝试。
 
 %% Branch-and-Cut 精确验证参数
 cfg.exact_validation.enabled = false;     % 是否在 main 末尾运行小规模精确验证。
