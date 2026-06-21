@@ -55,6 +55,20 @@ fprintf("是否已证明最优：%d\n", sol.proven_optimal);
 fprintf("分支定界节点数：%d\n", sol.nodes_explored);
 fprintf("运行时间：%.2f 秒\n", sol.runtime_seconds);
 
+% 服务水平监控与最小费用流分配对比。
+requiredServed = cfg.service_level_required * min(sum(mdl.data.shortage), sum(mdl.data.surplus));
+if ~isempty(sol.decoded) && isfield(sol.decoded, "objective_parts")
+    served = sol.decoded.objective_parts.total_served_bikes;
+    fprintf("服务水平：已满足 %.0f 辆 / 要求 %.0f 辆（达标=%s）\n", served, requiredServed, ...
+        string(served + 1.0e-6 >= requiredServed));
+    if isfield(sol, "flow_served")
+        fprintf("最小费用流分配（忽略路线时间约束，%.2f秒）：最多可服务 %.0f 辆、未满足 %.0f 辆、最优调度费用 %.4f\n", ...
+            sol.flow_runtime_seconds, sol.flow_served, sol.flow_unmet, sol.flow_cost);
+        fprintf("  → 启发式实际服务 %.0f 辆；差额 %.0f 辆即车队路线时间预算造成的服务损失。\n", ...
+            served, sol.flow_served - served);
+    end
+end
+
 saveOutputs(cfg, mdl, sol);
 fprintf("结果已保存到：%s\n", cfg.output_dir);
 

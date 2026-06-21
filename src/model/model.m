@@ -89,26 +89,53 @@ builder = newBuilder();
 idx = defineVariables(data, cfg, builder);
 builder = idx.builder;
 
-[builder, c] = setObjective(builder, idx, data, cfg);
-builder = addCoreConstraints(builder, idx, data, cfg);
-builder = addRoutingConstraints(builder, idx, data, cfg);
-builder = addLoadConstraints(builder, idx, data, cfg);
-if cfg.use_mtz_subtour_elimination
-    builder = addMtzConstraints(builder, idx, data);
+% 启发式求解器只用 mdl.data，不读 MILP 约束矩阵。仅在需要时才装配 MILP
+% （milp 求解，或精确验证复用本模型），避免在大实例上白白构造庞大稀疏矩阵
+% （200m 下约 25 万行 × 13 万列，构造耗时可达 20+ 分钟）。
+needMilp = ~isfield(cfg, "solver") || ~isfield(cfg.solver, "method") || cfg.solver.method ~= "heuristic";
+if isfield(cfg, "exact_validation") && isfield(cfg.exact_validation, "enabled") && cfg.exact_validation.enabled ...
+        && isfield(cfg.exact_validation, "same_as_main_model") && cfg.exact_validation.same_as_main_model
+    needMilp = true;   % 精确验证复用主模型时仍需约束矩阵
 end
 
 mdl = struct();
 mdl.name = "bike_rebalancing_" + string(cfg.grid_size_m) + "m_" + string(cfg.scenario_id);
-mdl.Aineq = sparse(builder.ai, builder.aj, builder.av, builder.nIneq, builder.nVar);
-mdl.bineq = builder.bineq(:);
-mdl.Aeq = sparse(builder.ei, builder.ej, builder.ev, builder.nEq, builder.nVar);
-mdl.beq = builder.beq(:);
-mdl.c = c(:);
-mdl.lb = builder.lb(:);
-mdl.ub = builder.ub(:);
-mdl.intcon = unique(builder.intcon(:));
-mdl.var_names = builder.varNames(:);
-mdl.index = rmfield(idx, "builder");
+
+if needMilp
+    [builder, c] = setObjective(builder, idx, data, cfg);
+    builder = addCoreConstraints(builder, idx, data, cfg);
+    builder = addRoutingConstraints(builder, idx, data, cfg);
+    builder = addLoadConstraints(builder, idx, data, cfg);
+    if cfg.use_mtz_subtour_elimination
+        builder = addMtzConstraints(builder, idx, data);
+    end
+
+    mdl.Aineq = sparse(builder.ai, builder.aj, builder.av, builder.nIneq, builder.nVar);
+    mdl.bineq = builder.bineq(:);
+    mdl.Aeq = sparse(builder.ei, builder.ej, builder.ev, builder.nEq, builder.nVar);
+    mdl.beq = builder.beq(:);
+    mdl.c = c(:);
+    mdl.lb = builder.lb(:);
+    mdl.ub = builder.ub(:);
+    mdl.intcon = unique(builder.intcon(:));
+    mdl.var_names = builder.varNames(:);
+    mdl.index = rmfield(idx, "builder");
+    mdl.milp_built = true;
+else
+    % 启发式专用：留空 MILP 字段，下游打印按 0 处理；如需 MILP 请将 solver.method 设为 "milp"。
+    mdl.Aineq = sparse(0, builder.nVar);
+    mdl.bineq = [];
+    mdl.Aeq = sparse(0, builder.nVar);
+    mdl.beq = [];
+    mdl.c = [];
+    mdl.lb = builder.lb(:);
+    mdl.ub = builder.ub(:);
+    mdl.intcon = [];
+    mdl.var_names = builder.varNames(:);
+    mdl.index = rmfield(idx, "builder");
+    mdl.milp_built = false;
+end
+
 mdl.data = data;
 mdl.cfg = cfg;
 end

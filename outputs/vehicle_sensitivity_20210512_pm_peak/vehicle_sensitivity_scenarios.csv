@@ -1,0 +1,16 @@
+scenario_id,analysis_group,small_count,medium_count,large_count
+baseline_20_6s12m2l,baseline,6,12,2
+composition_small_heavy_20_10s8m2l,composition,10,8,2
+composition_medium_heavy_20_4s14m2l,composition,4,14,2
+composition_large_heavy_20_4s8m8l,composition,4,8,8
+composition_balanced_20_7s7m6l,composition,7,7,6
+composition_no_large_20_8s12m0l,composition,8,12,0
+composition_no_small_20_0s14m6l,composition,0,14,6
+composition_all_small_20_20s0m0l,composition,20,0,0
+composition_all_medium_20_0s20m0l,composition,0,20,0
+composition_all_large_20_0s0m20l,composition,0,0,20
+total_8_2s5m1l,total_count,2,5,1
+total_12_4s7m1l,total_count,4,7,1
+total_16_5s10m1l,total_count,5,10,1
+total_24_7s14m3l,total_count,7,14,3
+total_28_8s17m3l,total_count,8,17,3
